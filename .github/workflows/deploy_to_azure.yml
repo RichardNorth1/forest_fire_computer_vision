@@ -1,0 +1,56 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+    branches:
+      - master
+
+jobs:
+  build:
+
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v2
+
+    - name: Set up Python
+      uses: actions/setup-python@v2
+      with:
+        python-version: '3.11'
+
+    - name: Cache pip
+      uses: actions/cache@v4
+      with:
+        path: ~/.cache/pip
+        key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
+        restore-keys: |
+          ${{ runner.os }}-pip-
+
+    - name: Install dependencies
+      run: |
+        python -m venv venv
+        source venv/bin/activate
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+
+    - name: Archive files
+      run: |
+        zip -r release.zip .
+
+    - name: Deploy to Azure Web App
+      uses: azure/webapps-deploy@v2
+      with:
+        app-name: ${{ secrets.AZURE_WEBAPP_NAME }}
+        slot-name: 'production'
+        publish-profile: ${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE }}
+        package: release.zip
+
+        
+    - name: Set startup command
+      run: |
+        az webapp config appsettings set --name ${{ secrets.AZURE_WEBAPP_NAME }} --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} --settings SCM_DO_BUILD_DURING_DEPLOYMENT=true
+        az webapp config set --name ${{ secrets.AZURE_WEBAPP_NAME }} --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} --startup-file "python /home/site/wwwroot/CNN_train.py && uvicorn app.main:app --host 0.0.0.0 --port 8000"
